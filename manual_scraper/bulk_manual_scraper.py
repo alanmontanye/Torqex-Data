@@ -57,10 +57,7 @@ class BulkManualScraper:
         
         # Predefined list of valid makes
         self.valid_makes = [
-            'Acura', 'Audi', 'BMW', 'Buick', 'Cadillac', 'Chevrolet', 
-            'Chrysler', 'Dodge', 'Ford', 'GMC', 'Honda', 'Hyundai', 
-            'Infiniti', 'Isuzu', 'Jaguar', 'Jeep', 'Kia', 'Lexus', 
-            'Lincoln', 'Mazda', 'Mercedes-Benz', 'Mercury', 'Mini', 
+            'Acura', 'Audi', 'BMW', 
             'Mitsubishi', 'Nissan', 'Oldsmobile', 'Pontiac', 'Ram', 
             'Saturn', 'Subaru', 'Toyota', 'Volkswagen', 'Volvo'
         ]
