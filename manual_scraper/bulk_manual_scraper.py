@@ -1050,41 +1050,86 @@ class BulkManualScraper:
             self.current_page = page
             self.current_save_path = save_path
             
-            consecutive_errors = 0
-            max_consecutive_errors = 2
-            
-            while retries > 0:
+            for attempt in range(retries):
                 try:
-                    success = await self.try_save_pdf(page, save_path)
-                    if success:
-                        consecutive_errors = 0
+                    # 1. Click print button
+                    logger.info("1. Clicking webpage print button...")
+                    await page.click('button:has-text("Print")', timeout=2000)
+                    await asyncio.sleep(1)
+                    
+                    # 2. Click system print dialog
+                    logger.info("2. Clicking system print dialog button...")
+                    abs_print_x, abs_print_y = self.get_absolute_coordinates(self.print_coords[0], self.print_coords[1])
+                    logger.info(f"Converting coordinates: {self.print_coords} -> ({abs_print_x}, {abs_print_y})")
+                    pyautogui.moveTo(abs_print_x, abs_print_y, duration=0.2)
+                    pyautogui.click()
+                    await asyncio.sleep(1)
+                    
+                    # 3. Type save path
+                    logger.info("3. Typing save path...")
+                    pyautogui.write(save_path)
+                    await asyncio.sleep(1)
+                    
+                    # 4. Click save button
+                    logger.info("4. Moving to save button...")
+                    abs_save_x, abs_save_y = self.get_absolute_coordinates(self.save_coords[0], self.save_coords[1])
+                    logger.info(f"Converting coordinates: {self.save_coords} -> ({abs_save_x}, {abs_save_y})")
+                    pyautogui.moveTo(abs_save_x, abs_save_y, duration=0.2)
+                    pyautogui.click()
+                    await asyncio.sleep(1)
+                    
+                    # Verify the save
+                    if await self.verify_pdf_save(save_path):
                         return True
                     
-                    consecutive_errors += 1
-                    if consecutive_errors >= max_consecutive_errors:
-                        logger.info("Multiple errors detected, attempting to cancel dialogs...")
-                        if await self.cancel_print_dialog():
-                            # Successfully cancelled dialogs, try save again
-                            success = await self.try_save_pdf(page, save_path)
-                            if success:
-                                return True
+                    # If verification failed, do ONE cleanup before retry
+                    if attempt < retries - 1:  # Don't cleanup on last attempt
+                        logger.info("PDF verification failed, cleaning up before retry...")
+                        await self.cleanup_dialogs(restore_menu=True)
+                        await asyncio.sleep(2)  # Give time for cleanup to complete
                         
                 except Exception as e:
                     logger.error(f"Error during PDF save attempt: {str(e)}")
-                    consecutive_errors += 1
-                
-                retries -= 1
-                if retries > 0:
-                    await asyncio.sleep(1)
+                    if attempt < retries - 1:
+                        logger.info("Cleaning up before retry...")
+                        await self.cleanup_dialogs(restore_menu=True)
+                        await asyncio.sleep(2)
             
+            logger.info(f"Failed to save PDF after {retries} attempts")
             return False
             
         except Exception as e:
             logger.error(f"Error in save_pdf: {str(e)}")
             return False
 
-    async def verify_pdf_save(self, pdf_path, wait_times=[2, 4, 10]):
-        """Verify PDF was saved successfully with progressive wait times"""
+    async def cleanup_dialogs(self, restore_menu=False):
+        """Single place for dialog cleanup logic"""
+        try:
+            # Store current menu state if needed
+            current_menu = None
+            if restore_menu:
+                try:
+                    current_menu = self.current_menu_item
+                except:
+                    pass
+
+            # Do one thorough cleanup
+            await self.cancel_print_dialog()
+            await asyncio.sleep(0.5)
+            pyautogui.press('esc')
+            await asyncio.sleep(0.5)
+            
+            # Restore menu context if needed
+            if restore_menu and current_menu:
+                logger.info(f"Restoring menu context for: {current_menu}")
+                await self.click_menu_item(self.current_frame, current_menu)
+                await asyncio.sleep(0.5)
+                
+        except Exception as e:
+            logger.error(f"Error in cleanup_dialogs: {str(e)}")
+
+    async def verify_pdf_save(self, pdf_path, wait_times=[2]):
+        """Verify PDF was saved successfully"""
         for wait_time in wait_times:
             logger.info(f"Waiting {wait_time} seconds for PDF to save...")
             await asyncio.sleep(wait_time)
@@ -1106,18 +1151,7 @@ class BulkManualScraper:
                     logger.error(f"Error verifying PDF: {str(e)}")
             else:
                 logger.info(f"PDF file not found after {wait_time}s wait")
-                
-            # If we get here, verification failed for this wait time
-            # Clean up any dialogs before next attempt
-            await self.cancel_print_dialog()
-            await asyncio.sleep(1)
         
-        # If we get here, all verification attempts failed
-        logger.error(f"Failed to verify PDF after all retries: {os.path.basename(pdf_path)}")
-        # Do a thorough cleanup before returning
-        await self.cancel_print_dialog()
-        await asyncio.sleep(2)
-        await self.cancel_print_dialog()
         return False
 
     def get_absolute_coordinates(self, x, y):
@@ -1564,7 +1598,7 @@ class BulkManualScraper:
                             await asyncio.sleep(1)
                         except:
                             pass
-                        break  # Move to next make if we can't access this one
+                        break  # Move to next make
                     
                     # Get models for this make - retry up to 3 times
                     models = None
