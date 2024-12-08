@@ -615,45 +615,6 @@ class BulkManualScraper:
         start_time = time.time()
         last_action_time = start_time
         
-        # Define cleanup sequences to try
-        cleanup_sequences = [
-            # Sequence 1: Handle Print Dialog
-            [
-                (self.cancel_print_dialog, "Cancel Print Dialog"),
-                (lambda: asyncio.sleep(1), "Wait after print dialog cancel"),
-                (lambda: pyautogui.press('esc'), "ESC key after print dialog"),
-                (lambda: asyncio.sleep(1), "Wait after ESC"),
-            ],
-            # Sequence 2: Handle Save Dialog
-            [
-                (lambda: pyautogui.press('esc'), "ESC key for Save Dialog"),
-                (lambda: asyncio.sleep(1), "Wait after ESC"),
-                (lambda: self.click_coordinates(*self.cancel_print_coords), "Click Cancel in Save Dialog"),
-                (lambda: asyncio.sleep(1), "Wait after cancel click"),
-            ],
-
-            # Sequence 3: Handle File Exists Dialog
-            [
-                (lambda: pyautogui.press('n'), "Press 'N' for No on file exists"),
-                (lambda: asyncio.sleep(1), "Wait after No"),
-                (lambda: pyautogui.press('esc'), "ESC after file exists"),
-                (lambda: asyncio.sleep(1), "Wait after ESC"),
-            ],
-            # Sequence 4: Thorough cleanup of all possible dialogs
-            [
-                (self.cancel_print_dialog, "Initial Print Dialog Cancel"),
-                (lambda: asyncio.sleep(1), "Wait 1"),
-                (lambda: pyautogui.press('esc'), "ESC for Save Dialog"),
-                (lambda: asyncio.sleep(1), "Wait 2"),
-                (lambda: pyautogui.press('n'), "No for File Exists"),
-                (lambda: asyncio.sleep(1), "Wait 3"),
-                (lambda: self.click_coordinates(*self.cancel_print_coords), "Click Cancel Button"),
-                (lambda: asyncio.sleep(1), "Wait 4"),
-                (lambda: pyautogui.press('esc'), "Final ESC"),
-                (lambda: asyncio.sleep(2), "Final Wait"),
-            ],
-        ]
-
         while time.time() - start_time < 120:  # 2 minutes max total time
             current_time = time.time()
             
@@ -661,35 +622,32 @@ class BulkManualScraper:
             if await self.try_click_submenu(frame, submenu_text):
                 return True
             
-            # If no progress in 15 seconds (reduced from 30), try cleanup sequences
+            # If no progress in 15 seconds, try a simple cleanup
             if current_time - last_action_time > 15:
-                logger.warning(f"Been stuck for {int(current_time - last_action_time)}s, trying cleanup sequences...")
+                logger.warning(f"Been stuck for {int(current_time - last_action_time)}s, trying simple cleanup...")
                 
-                # Try each cleanup sequence
-                for sequence_num, sequence in enumerate(cleanup_sequences, 1):
-                    logger.info(f"Trying cleanup sequence {sequence_num} of {len(cleanup_sequences)}...")
-                    
-                    # Execute each step in the sequence
-                    for action, description in sequence:
-                        try:
-                            logger.info(f"Executing cleanup step: {description}")
-                            if asyncio.iscoroutinefunction(action):
-                                await action()
-                            else:
-                                action()
-                        except Exception as e:
-                            logger.error(f"Error during cleanup ({description}): {str(e)}")
-                            continue
-                    
-                    # After each sequence, try clicking again
-                    logger.info(f"Attempting click after cleanup sequence {sequence_num}")
-                    if await self.try_click_submenu(frame, submenu_text):
-                        return True
-                    
-                    # Short wait before trying next sequence
-                    await asyncio.sleep(2)
+                # Clear any dialogs
+                pyautogui.press('esc')
+                await asyncio.sleep(0.5)
+                pyautogui.press('esc')
+                await asyncio.sleep(0.5)
                 
-                # Update last_action_time after trying all sequences
+                # Click main menu to reset state
+                try:
+                    logger.info("Clicking main menu to reset state...")
+                    # Find and click the main menu item
+                    main_menu = await frame.query_selector('.menu__link--level-0')
+                    if main_menu:
+                        await main_menu.click()
+                        await asyncio.sleep(1)  # Wait for menu to respond
+                except Exception as e:
+                    logger.error(f"Error clicking main menu: {str(e)}")
+                
+                # Try clicking submenu again
+                if await self.try_click_submenu(frame, submenu_text):
+                    return True
+                
+                # Update last_action_time after cleanup
                 last_action_time = time.time()
             
             await asyncio.sleep(1)
@@ -718,16 +676,11 @@ class BulkManualScraper:
                                     # Wait after clicking to ensure navigation starts
                                     await asyncio.sleep(3)
                                     return True
-                                except Exception as click_error:
-                                    logger.error(f"Click failed: {str(click_error)}")
-                                    # Immediately run cleanup procedures after click failure
-                                    logger.info("Running cleanup after click failure...")
-                                    await self.cancel_print_dialog()
-                                    await asyncio.sleep(1)
+                                except Exception as e:
+                                    logger.error(f"Click failed: {str(e)}")
+                                    # Just press ESC once on click failure
                                     pyautogui.press('esc')
-                                    await asyncio.sleep(1)
-                                    await self.click_coordinates(*self.cancel_print_coords)
-                                    await asyncio.sleep(1)
+                                    await asyncio.sleep(0.5)
                     except Exception as e:
                         continue
             except Exception as e:
@@ -1125,8 +1078,8 @@ class BulkManualScraper:
         except Exception as e:
             logger.error(f"Error in cleanup_dialogs: {str(e)}")
 
-    async def verify_pdf_save(self, pdf_path, wait_times=[2]):
-        """Verify PDF was saved successfully"""
+    async def verify_pdf_save(self, pdf_path, wait_times=[2, 4, 10]):
+        """Verify PDF was saved successfully with progressive wait times"""
         for wait_time in wait_times:
             logger.info(f"Waiting {wait_time} seconds for PDF to save...")
             await asyncio.sleep(wait_time)
@@ -1149,6 +1102,8 @@ class BulkManualScraper:
             else:
                 logger.info(f"PDF file not found after {wait_time}s wait")
         
+        # If we get here, all verification attempts failed
+        logger.error(f"Failed to verify PDF after all retries: {os.path.basename(pdf_path)}")
         return False
 
     def get_absolute_coordinates(self, x, y):
