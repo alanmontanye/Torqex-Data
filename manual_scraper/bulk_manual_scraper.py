@@ -57,7 +57,7 @@ class BulkManualScraper:
         
         # Predefined list of valid makes
         self.valid_makes = [
-            'Acura', 'Audi', 'BMW', 
+            'Acura', 'Audi', 'BMW',
             'Mitsubishi', 'Nissan', 'Oldsmobile', 'Pontiac', 'Ram', 
             'Saturn', 'Subaru', 'Toyota', 'Volkswagen', 'Volvo'
         ]

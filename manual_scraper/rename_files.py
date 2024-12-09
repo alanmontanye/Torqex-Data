@@ -17,7 +17,7 @@ def shorten_filename(filename):
         'manual': 'man',
         'transaxle': 'trans',
     }
-    
+   
     new_name = filename.lower()
     for old, new in replacements.items():
         new_name = new_name.replace(old.lower(), new)
